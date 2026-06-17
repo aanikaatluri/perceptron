@@ -16,8 +16,10 @@ from models import (
     OccupationalInjuryExtraction,
     SafetyReport,
     VisualSearchResult,
+    WorkplaceIncidentReport,
 )
 from form5020 import fill_form5020
+from incident_report import fill_incident_report
 from compress_video import DEFAULT_TRIM_SECONDS, VideoPreparationError, prepare_video_for_upload
 from streaming import FlowUpdate, consume_question_stream, format_progress
 from tracing import (
@@ -84,6 +86,36 @@ Find the video segment that best shows the workplace injury or incident describe
 Return the clearest temporal clip where this incident occurs. Be precise with MM:SS timestamps \
 aligned to the uploaded clip.
 """
+
+WORKPLACE_INCIDENT_PROMPT = """\
+Review this workplace security camera footage and answer the workplace incident questions below.
+
+1. Did a safety incident occur that resulted in harm or injury to a person? Set incident_occurred \
+to true only if harm or injury to a person is directly visible or clearly indicated. Near-misses \
+without harm, unsafe acts without injury, or policy violations alone are not sufficient.
+
+2. If incident_occurred is false, leave all other fields empty and stop.
+
+3. If incident_occurred is true, populate:
+   - timestamp: MM:SS time or range when the incident occurred (e.g. 00:12–00:18)
+   - incident_description: who was involved and what happened
+   - previous_activity: what the employee was doing just before the incident
+   - potential_injuries: potential injuries sustained by involved parties
+   - involved_equipment: objects or substances that caused or contributed to harm
+
+Use only what is directly visible on camera. Do not invent names, diagnoses, or facts.
+"""
+
+WORKPLACE_INCIDENT_CLIP_PROMPT = """\
+Find the video segment showing the workplace safety incident that resulted in harm or injury \
+to a person.
+
+{context}
+
+Return the clearest temporal clip. Use MM:SS timestamps aligned to the uploaded clip.
+"""
+
+NO_INCIDENT_MESSAGE = "no incidents observed."
 
 SEARCH_PROMPT_TEMPLATE = """\
 {query}
@@ -216,6 +248,60 @@ def _extraction_to_api_shape(report: OccupationalInjuryExtraction) -> dict:
     return report.model_dump()
 
 
+def _workplace_incident_to_api_shape(report: WorkplaceIncidentReport) -> dict:
+    if not report.incident_occurred:
+        return {
+            "incident_occurred": False,
+            "timestamp": "",
+            "incident_description": NO_INCIDENT_MESSAGE,
+            "previous_activity": "",
+            "potential_injuries": "",
+            "involved_equipment": [],
+        }
+    return {
+        "incident_occurred": True,
+        "timestamp": report.timestamp,
+        "incident_description": report.incident_description,
+        "previous_activity": report.previous_activity,
+        "potential_injuries": report.potential_injuries,
+        "involved_equipment": report.involved_equipment,
+    }
+
+
+def _workplace_incident_clip_prompt(report: WorkplaceIncidentReport) -> str:
+    context = report.incident_description.strip() or (
+        "Identify the workplace safety incident that resulted in harm or injury to a person."
+    )
+    return WORKPLACE_INCIDENT_CLIP_PROMPT.format(context=context)
+
+
+def _ground_workplace_incident_timestamp(
+    path: Path,
+    report: WorkplaceIncidentReport,
+) -> WorkplaceIncidentReport:
+    if not report.incident_occurred or report.timestamp.strip():
+        return report
+
+    result = _perceptron_question(
+        video(str(path)),
+        _workplace_incident_clip_prompt(report),
+        reasoning=True,
+        expects="clip",
+    )
+    if not result.clips:
+        return report
+
+    clip = result.clips[0]
+    return report.model_copy(
+        update={
+            "timestamp": _format_evidence_clip_range(
+                clip.timestamp.at,
+                clip.timestamp.until,
+            ),
+        }
+    )
+
+
 @observe(
     name="perceptron-mk1",
     as_type="generation",
@@ -262,6 +348,7 @@ def _flow_success_update(
     trace.set_output(structured_output_for_trace(payload))
     display = dict(payload)
     display.pop("form_5020_pdf", None)
+    display.pop("incident_report_pdf", None)
     display.pop("reasoning", None)
     return FlowUpdate(
         reasoning=reasoning_md,
@@ -332,6 +419,13 @@ def incident_review(
             payload["reasoning"] = result.reasoning
         payload["structured_output_schema"] = SafetyReport.__name__
         payload["event_count"] = len(report.events)
+
+        try:
+            pdf_path = fill_incident_report(payload)
+            payload["incident_report_pdf"] = str(pdf_path)
+        except Exception as exc:
+            payload["pdf_error"] = f"Could not generate incident report PDF: {exc}"
+
         set_span_io(output_data=structured_output_for_trace(payload))
         return attach_trace_id(payload)
 
@@ -414,10 +508,23 @@ def incident_review_stream(
             payload["reasoning"] = result.reasoning
         payload["structured_output_schema"] = SafetyReport.__name__
         payload["event_count"] = len(report.events)
+
+        pdf_path: str | None = None
+        try:
+            pdf_path = str(fill_incident_report(payload))
+            payload["incident_report_pdf"] = pdf_path
+        except Exception as exc:
+            payload["pdf_error"] = f"Could not generate incident report PDF: {exc}"
+
+        reasoning_md = format_progress(status="Complete.", reasoning=result.reasoning or "")
+        if pdf_path is None and payload.get("pdf_error"):
+            reasoning_md += f"\n\n**Incident report PDF:** {payload['pdf_error']}"
+
         yield _flow_success_update(
             payload,
             trace=trace,
-            reasoning_md=format_progress(status="Complete.", reasoning=result.reasoning or ""),
+            reasoning_md=reasoning_md,
+            pdf_path=pdf_path,
             generation=(prompt, gen_kwargs, result),
         )
     finally:
@@ -794,6 +901,182 @@ def occupational_injury_report(
         except Exception as exc:
             payload["pdf_error"] = f"Could not generate Form 5020 PDF: {exc}"
 
+        if result.reasoning:
+            payload["reasoning"] = result.reasoning
+        set_span_io(output_data=structured_output_for_trace(payload))
+        return attach_trace_id(payload)
+
+
+def workplace_incident_report_stream(
+    video_path: str | Path,
+    *,
+    session_id: str | None = None,
+) -> Iterator[FlowUpdate]:
+    """Flow D: workplace incident Q&A with live reasoning streamed to the UI."""
+    path = Path(video_path)
+    trace = FlowTrace.start(
+        "flow-d-workplace-incident",
+        flow="D",
+        session_id=session_id,
+        tags=["workplace-incident", "structured-output"],
+    )
+    gen_kwargs = {
+        "reasoning": True,
+        "response_format": pydantic_format(WorkplaceIncidentReport, strict=True),
+    }
+    prompt = WORKPLACE_INCIDENT_PROMPT
+
+    try:
+        yield FlowUpdate(reasoning=format_progress(status="Preparing video…"), trace_id=trace.trace_id)
+
+        path, prep_error = _prepare_video(path)
+        if prep_error:
+            yield _flow_error_update(prep_error, trace=trace)
+            return
+
+        trace.set_input({"video": video_metadata(path), "flow": "workplace_incident_report"})
+
+        validation_error = _validate_video(path)
+        if validation_error:
+            yield _flow_error_update(validation_error, trace=trace)
+            return
+
+        try:
+            result = None
+            for progress, partial in _stream_perceptron_question(
+                video(str(path)),
+                prompt,
+                **gen_kwargs,
+            ):
+                if partial is None:
+                    yield FlowUpdate(reasoning=progress, trace_id=trace.trace_id)
+                else:
+                    result = partial
+        except PerceptronTimeoutError:
+            yield _flow_error_update(_timeout_payload(), trace=trace)
+            return
+        except RuntimeError as exc:
+            yield _flow_error_update({"error": str(exc)}, trace=trace)
+            return
+
+        if result.errors:
+            yield _flow_error_update(
+                {"error": "Model returned validation warnings.", "details": result.errors},
+                trace=trace,
+            )
+            return
+
+        try:
+            report = WorkplaceIncidentReport.model_validate_json(result.text)
+        except Exception as exc:
+            yield _flow_error_update(
+                {
+                    "error": "Failed to parse workplace incident report.",
+                    "raw_text": result.text,
+                    "details": str(exc),
+                },
+                trace=trace,
+            )
+            return
+
+        if not report.incident_occurred:
+            payload = _workplace_incident_to_api_shape(report)
+            payload["structured_output_schema"] = WorkplaceIncidentReport.__name__
+            yield _flow_success_update(
+                payload,
+                trace=trace,
+                reasoning_md=format_progress(status="Complete."),
+                generation=(prompt, gen_kwargs, result),
+            )
+            return
+
+        if not report.timestamp.strip():
+            yield FlowUpdate(
+                reasoning=format_progress(status="Locating incident timestamp…"),
+                trace_id=trace.trace_id,
+            )
+            report = _ground_workplace_incident_timestamp(path, report)
+
+        payload = _workplace_incident_to_api_shape(report)
+        payload["structured_output_schema"] = WorkplaceIncidentReport.__name__
+        if result.reasoning:
+            payload["reasoning"] = result.reasoning
+        yield _flow_success_update(
+            payload,
+            trace=trace,
+            reasoning_md=format_progress(status="Complete.", reasoning=result.reasoning or ""),
+            generation=(prompt, gen_kwargs, result),
+        )
+    finally:
+        trace.end()
+
+
+@observe(name="flow-d-workplace-incident", capture_input=False, capture_output=False)
+def workplace_incident_report(
+    video_path: str | Path,
+    *,
+    session_id: str | None = None,
+) -> dict:
+    """Flow D: workplace incident Q&A from security footage."""
+    path = Path(video_path)
+
+    with trace_context(flow="D", session_id=session_id, tags=["workplace-incident", "structured-output"]):
+        path, prep_error = _prepare_video(path)
+        set_span_io(
+            input_data={
+                "video": video_metadata(path),
+                "flow": "workplace_incident_report",
+            }
+        )
+
+        if prep_error:
+            set_span_io(output_data=prep_error)
+            return attach_trace_id(prep_error)
+
+        validation_error = _validate_video(path)
+        if validation_error:
+            set_span_io(output_data=validation_error)
+            return attach_trace_id(validation_error)
+
+        try:
+            result = _perceptron_question(
+                video(str(path)),
+                WORKPLACE_INCIDENT_PROMPT,
+                reasoning=True,
+                response_format=pydantic_format(WorkplaceIncidentReport, strict=True),
+            )
+        except PerceptronTimeoutError:
+            payload = _timeout_payload()
+            set_span_io(output_data=payload)
+            return attach_trace_id(payload)
+
+        if result.errors:
+            payload = {"error": "Model returned validation warnings.", "details": result.errors}
+            set_span_io(output_data=payload)
+            return attach_trace_id(payload)
+
+        try:
+            report = WorkplaceIncidentReport.model_validate_json(result.text)
+        except Exception as exc:
+            payload = {
+                "error": "Failed to parse workplace incident report.",
+                "raw_text": result.text,
+                "details": str(exc),
+            }
+            set_span_io(output_data=payload)
+            return attach_trace_id(payload)
+
+        if not report.incident_occurred:
+            payload = _workplace_incident_to_api_shape(report)
+            payload["structured_output_schema"] = WorkplaceIncidentReport.__name__
+            set_span_io(output_data=payload)
+            return attach_trace_id(payload)
+
+        if not report.timestamp.strip():
+            report = _ground_workplace_incident_timestamp(path, report)
+
+        payload = _workplace_incident_to_api_shape(report)
+        payload["structured_output_schema"] = WorkplaceIncidentReport.__name__
         if result.reasoning:
             payload["reasoning"] = result.reasoning
         set_span_io(output_data=structured_output_for_trace(payload))

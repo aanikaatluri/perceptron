@@ -1,4 +1,4 @@
-"""Gradio app for Hugging Face Spaces — dual-flow safety video analytics."""
+"""Gradio app for Hugging Face Spaces — workplace safety video analytics."""
 
 import atexit
 import os
@@ -14,8 +14,9 @@ from analyze import (
     incident_review_stream,
     occupational_injury_report_stream,
     visual_search_stream,
+    workplace_incident_report_stream,
 )
-from models import OccupationalInjuryExtraction, SafetyReport
+from models import OccupationalInjuryExtraction, SafetyReport, WorkplaceIncidentReport
 from tracing import flush_tracing, init_tracing, is_configured, submit_user_feedback
 
 init_tracing()
@@ -46,10 +47,10 @@ def _session_id(request: gr.Request | None) -> str | None:
 
 def run_incident_review(uploaded_video, request: gr.Request):
     if uploaded_video is None:
-        yield "", "", ""
+        yield "", "", "", None
         return
     for update in incident_review_stream(uploaded_video, session_id=_session_id(request)):
-        yield update.reasoning, update.output, update.trace_id
+        yield update.reasoning, update.output, update.trace_id, update.pdf_path
     flush_tracing()
 
 
@@ -68,6 +69,15 @@ def run_injury_report(uploaded_video, request: gr.Request):
         return
     for update in occupational_injury_report_stream(uploaded_video, session_id=_session_id(request)):
         yield update.reasoning, update.output, update.trace_id, update.pdf_path
+    flush_tracing()
+
+
+def run_workplace_incident(uploaded_video, request: gr.Request):
+    if uploaded_video is None:
+        yield "", "", ""
+        return
+    for update in workplace_incident_report_stream(uploaded_video, session_id=_session_id(request)):
+        yield update.reasoning, update.output, update.trace_id
     flush_tracing()
 
 
@@ -95,6 +105,14 @@ def injury_feedback_not_helpful(trace_id: str, comment: str) -> str:
     return submit_user_feedback(trace_id, helpful=False, comment=comment, flow="C")
 
 
+def workplace_feedback_helpful(trace_id: str, comment: str) -> str:
+    return submit_user_feedback(trace_id, helpful=True, comment=comment, flow="D")
+
+
+def workplace_feedback_not_helpful(trace_id: str, comment: str) -> str:
+    return submit_user_feedback(trace_id, helpful=False, comment=comment, flow="D")
+
+
 with gr.Blocks(title="Workplace Safety Video Analytics") as demo:
     gr.Markdown(
         """
@@ -109,7 +127,8 @@ with gr.Blocks(title="Workplace Safety Video Analytics") as demo:
         with gr.Tab("Flow A — Safety Incident Review"):
             gr.Markdown(
                 "Upload a security clip and receive a structured JSON safety report with "
-                "timestamped events, severity, visual evidence, and recommended actions."
+                "timestamped events, severity, visual evidence, and recommended actions. "
+                "Download a partially filled Workplace Incident Report PDF derived from the analysis."
             )
             review_trace_id = gr.State("")
             with gr.Row():
@@ -127,6 +146,10 @@ with gr.Blocks(title="Workplace Safety Video Analytics") as demo:
                         value="",
                         lines=18,
                     )
+                    review_pdf = gr.File(
+                        label="Download Workplace Incident Report (partial)",
+                        interactive=False,
+                    )
             with gr.Row():
                 review_helpful_btn = gr.Button("👍 Helpful")
                 review_not_helpful_btn = gr.Button("👎 Not helpful")
@@ -139,7 +162,7 @@ with gr.Blocks(title="Workplace Safety Video Analytics") as demo:
             review_btn.click(
                 run_incident_review,
                 inputs=review_video,
-                outputs=[review_reasoning, review_output, review_trace_id],
+                outputs=[review_reasoning, review_output, review_trace_id, review_pdf],
             )
             review_helpful_btn.click(
                 feedback_helpful,
@@ -254,15 +277,63 @@ with gr.Blocks(title="Workplace Safety Video Analytics") as demo:
                 outputs=injury_feedback_status,
             )
 
+        with gr.Tab("Flow D — Workplace Incident Report"):
+            gr.Markdown(
+                "Upload a security clip to answer structured workplace incident questions: "
+                "whether harm or injury occurred, when it happened, who was involved, prior activity, "
+                "potential injuries, and equipment or substances involved."
+            )
+            workplace_trace_id = gr.State("")
+            with gr.Row():
+                with gr.Column():
+                    workplace_video = gr.Video(
+                        label="Security clip",
+                        sources=["upload"],
+                    )
+                    workplace_btn = gr.Button("Generate incident report", variant="primary")
+                with gr.Column():
+                    workplace_reasoning = gr.Markdown(value="")
+                    workplace_output = gr.Code(
+                        label="Workplace incident report",
+                        language="json",
+                        value="",
+                        lines=16,
+                    )
+            with gr.Row():
+                workplace_helpful_btn = gr.Button("👍 Helpful")
+                workplace_not_helpful_btn = gr.Button("👎 Not helpful")
+            workplace_feedback_comment = gr.Textbox(
+                label="Feedback comment (optional)",
+                placeholder="Was the incident assessment accurate?",
+                lines=2,
+            )
+            workplace_feedback_status = gr.Markdown()
+            workplace_btn.click(
+                run_workplace_incident,
+                inputs=workplace_video,
+                outputs=[workplace_reasoning, workplace_output, workplace_trace_id],
+            )
+            workplace_helpful_btn.click(
+                workplace_feedback_helpful,
+                inputs=[workplace_trace_id, workplace_feedback_comment],
+                outputs=workplace_feedback_status,
+            )
+            workplace_not_helpful_btn.click(
+                workplace_feedback_not_helpful,
+                inputs=[workplace_trace_id, workplace_feedback_comment],
+                outputs=workplace_feedback_status,
+            )
+
     gr.Markdown(
         f"""
         ### Structured output schema
-        Flow A validates against `{SafetyReport.__name__}` via Perceptron constrained decoding.
+        Flow A validates against `{SafetyReport.__name__}` via Perceptron constrained decoding and generates a downloadable fillable Workplace Incident Report PDF.
         Flow B uses clip grounding (`expects="clip"`) for timestamped segment retrieval.
         Flow C validates against `{OccupationalInjuryExtraction.__name__}` and fills `assets/form5020.pdf`.
+        Flow D validates against `{WorkplaceIncidentReport.__name__}` for incident Q&A.
 
         ### Observability (Langfuse)
-        Traces use nested spans (`flow-a-*` / `flow-b-*` / `flow-c-*` → `perceptron-mk1` generation), Gradio
+        Traces use nested spans (`flow-a-*` / `flow-b-*` / `flow-c-*` / `flow-d-*` → `perceptron-mk1` generation), Gradio
         `session_id`, feature tags, explicit trace I/O (no raw video bytes), and `user-thumbs`
         boolean scores for regression testing.
         """

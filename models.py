@@ -136,3 +136,48 @@ class OccupationalInjuryExtraction(BaseModel):
             "the scene is ambiguous, or the form should not be filed without human verification."
         ),
     )
+
+
+class WorkplaceIncidentReport(BaseModel):
+    """Flow D: structured workplace incident Q&A from security footage."""
+
+    incident_occurred: bool = Field(
+        description=(
+            "Does a safety incident occur in the video? True if a safety incident resulting in harm or injury to a person is directly visible or clearly shown. False when no incident is shown."
+        ),
+    )
+    timestamp: str = Field(
+        default="",
+        description=(
+            "MM:SS timestamp or range when the incident occurred (e.g. '00:12–00:18'). "
+            "Leave blank if incident_occurred is false."
+        ),
+    )
+    incident_description: str = Field(
+        default="",
+        description=(
+            "Who was involved and what happened. Objective description citing only visible actions. "
+            "Leave blank if incident_occurred is false."
+        ),
+    )
+    previous_activity: str = Field(
+        default="",
+        description=(
+            "What the employee was doing immediately before the incident, based on visible "
+            "behavior. Leave blank if incident_occurred is false or unclear."
+        ),
+    )
+    potential_injuries: str = Field(
+        default="",
+        description=(
+            "Potential injuries sustained by involved parties, based only on visible impact, "
+            "posture, or guarding behavior. Leave blank if incident_occurred is false."
+        ),
+    )
+    involved_equipment: List[str] = Field(
+        default_factory=list,
+        description=(
+            "Objects, machinery, vehicles, tools, or substances in the environment that caused "
+            "or contributed to harm. Empty list if incident_occurred is false or none are visible."
+        ),
+    )
