@@ -421,7 +421,15 @@ def incident_review(
         payload["event_count"] = len(report.events)
 
         try:
-            pdf_path = fill_incident_report(payload)
+            pdf_path = fill_incident_report(
+                payload,
+                video_path=path,
+                record_model_call=lambda prompt, kwargs, result: set_generation_io(
+                    prompt=prompt,
+                    kwargs=kwargs,
+                    result=result,
+                ),
+            )
             payload["incident_report_pdf"] = str(pdf_path)
         except Exception as exc:
             payload["pdf_error"] = f"Could not generate incident report PDF: {exc}"
@@ -509,9 +517,20 @@ def incident_review_stream(
         payload["structured_output_schema"] = SafetyReport.__name__
         payload["event_count"] = len(report.events)
 
+        yield FlowUpdate(
+            reasoning=format_progress(status="Enriching incident report fields…"),
+            trace_id=trace.trace_id,
+        )
+
         pdf_path: str | None = None
         try:
-            pdf_path = str(fill_incident_report(payload))
+            pdf_path = str(
+                fill_incident_report(
+                    payload,
+                    video_path=path,
+                    record_model_call=trace.record_generation,
+                )
+            )
             payload["incident_report_pdf"] = pdf_path
         except Exception as exc:
             payload["pdf_error"] = f"Could not generate incident report PDF: {exc}"

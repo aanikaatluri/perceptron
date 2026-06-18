@@ -2,15 +2,34 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 import tempfile
 import unicodedata
+from collections.abc import Callable
 from io import BytesIO
 from pathlib import Path
+from typing import Any
 
+from perceptron import question, video
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
+
+logger = logging.getLogger(__name__)
+
+ModelCallRecorder = Callable[[str, dict[str, Any], Any], None] | None
+
+INJURY_INFERENCE_PROMPT = (
+    "Look at the clip {timestamp_range} of this incident where {description}. "
+    "Infer the most likely potential injuries that could have been sustained from this incident based on the clip. Be concise and only include the most likely injuries."
+)
+
+INCIDENT_DATETIME_PROMPT = (
+    "Look for a timestamp in the video in the clip {timestamp_range}. "
+    "Return the available date MM/DD/YY and time MM:SS information if available, "
+    "otherwise return an empty string."
+)
 
 FIELD_DATE_OF_INCIDENT = "date_of_incident"
 FIELD_TIME_EMPLOYEE_BEGAN_WORK = "time_employee_began_work"
@@ -83,6 +102,163 @@ def _format_timestamp(event: dict) -> str:
     return start
 
 
+def _prompt_timestamp_range(event: dict) -> str:
+    return _format_timestamp(event).replace("\u2013", "-").replace("\u2014", "-")
+
+
+def _incident_context(report: dict) -> tuple[str, str] | None:
+    """Return (timestamp_range, description) for the primary safety event."""
+    events = list(report.get("events") or [])
+    primary = _primary_event(events)
+    if not primary:
+        return None
+
+    timestamp_range = _prompt_timestamp_range(primary)
+    if not timestamp_range:
+        return None
+
+    description = (primary.get("description") or "").strip()
+    if not description:
+        description = (report.get("summary") or "").strip()
+    if not description:
+        return None
+
+    return timestamp_range, description
+
+
+def _perceptron_text_question(
+    video_path: Path,
+    prompt: str,
+    *,
+    label: str,
+    record_model_call: ModelCallRecorder = None,
+    warn_if_empty: bool = True,
+) -> str:
+    kwargs = {"reasoning": True}
+    result = question(video(str(video_path)), prompt, **kwargs)
+
+    if record_model_call is not None:
+        try:
+            record_model_call(prompt=prompt, kwargs=kwargs, result=result)
+        except Exception as exc:
+            logger.warning(
+                "Incident report enrichment (%s) tracing failed: %s",
+                label,
+                exc,
+            )
+
+    if result.errors:
+        logger.warning(
+            "Incident report enrichment (%s) returned validation issues: %s",
+            label,
+            result.errors,
+        )
+
+    text = (result.text or "").strip()
+    if not text and warn_if_empty:
+        logger.warning(
+            "Incident report enrichment (%s) returned an empty response.",
+            label,
+        )
+    return text
+
+
+def _infer_injuries_from_video(
+    video_path: Path,
+    timestamp_range: str,
+    description: str,
+    *,
+    record_model_call: ModelCallRecorder = None,
+) -> str:
+    prompt = INJURY_INFERENCE_PROMPT.format(
+        timestamp_range=timestamp_range,
+        description=description,
+    )
+    return _perceptron_text_question(
+        video_path,
+        prompt,
+        label="injury description",
+        record_model_call=record_model_call,
+    )
+
+
+def _infer_incident_datetime_from_video(
+    video_path: Path,
+    timestamp_range: str,
+    *,
+    record_model_call: ModelCallRecorder = None,
+) -> str:
+    prompt = INCIDENT_DATETIME_PROMPT.format(timestamp_range=timestamp_range)
+    return _perceptron_text_question(
+        video_path,
+        prompt,
+        label="incident date/time",
+        record_model_call=record_model_call,
+        warn_if_empty=False,
+    )
+
+
+def enrich_incident_report_fields(
+    report: dict,
+    video_path: str | Path,
+    values: dict[str, str | bool],
+    *,
+    record_model_call: ModelCallRecorder = None,
+) -> dict[str, str | bool]:
+    """Second-pass Perceptron calls for injury description and incident date/time."""
+    context = _incident_context(report)
+    if context is None:
+        logger.warning(
+            "Incident report enrichment skipped: no primary safety event with a timestamp "
+            "and description available from the safety report."
+        )
+        return values
+
+    timestamp_range, description = context
+    path = Path(video_path)
+    if not path.is_file():
+        logger.warning(
+            "Incident report enrichment skipped: video not found at %s",
+            path,
+        )
+        return values
+
+    enriched = dict(values)
+
+    try:
+        enriched[FIELD_INJURY_DESCRIPTION] = _infer_injuries_from_video(
+            path,
+            timestamp_range,
+            description,
+            record_model_call=record_model_call,
+        )
+    except Exception as exc:
+        enriched[FIELD_INJURY_DESCRIPTION] = ""
+        logger.warning(
+            "Incident report injury enrichment failed for clip %s: %s",
+            timestamp_range,
+            exc,
+            exc_info=True,
+        )
+
+    try:
+        enriched[FIELD_TIME_OF_INCIDENT] = _infer_incident_datetime_from_video(
+            path,
+            timestamp_range,
+            record_model_call=record_model_call,
+        )
+    except Exception as exc:
+        enriched[FIELD_TIME_OF_INCIDENT] = ""
+        logger.warning(
+            "Incident report date/time enrichment failed for clip %s: %s",
+            timestamp_range,
+            exc,
+            exc_info=True,
+        )
+
+    return enriched
+
+
 def _extract_location(summary: str, events: list[dict]) -> str:
     for event in events:
         evidence = (event.get("visual_evidence") or "").strip()
@@ -129,27 +305,8 @@ def _incident_description(events: list[dict], summary: str) -> str:
         evidence = (event.get("visual_evidence") or "").strip()
         if evidence:
             lines.append(f"Visual evidence: {evidence}")
-        action = (event.get("recommended_action") or "").strip()
-        if action:
-            lines.append(f"Recommended action: {action}")
 
     return "\n".join(line for line in lines if line)
-
-
-def _injuries_description(events: list[dict]) -> str:
-    lines: list[str] = []
-    for event in events:
-        if event.get("severity") not in ("high", "medium"):
-            continue
-        evidence = (event.get("visual_evidence") or "").strip()
-        description = (event.get("description") or "").strip()
-        if evidence:
-            lines.append(evidence)
-        elif description:
-            lines.append(description)
-    if lines:
-        return "\n".join(lines)
-    return "Potential injuries or illnesses should be verified by qualified medical personnel."
 
 
 def _involved_equipment(events: list[dict]) -> str:
@@ -172,20 +329,16 @@ def safety_report_to_form_values(report: dict) -> dict[str, str | bool]:
     """Map Flow A safety report JSON to workplace incident form values."""
     events = list(report.get("events") or [])
     summary = (report.get("summary") or "").strip()
-    primary = _primary_event(events)
     injuries = _suggests_injury(events)
 
     values: dict[str, str | bool] = {
         FIELD_DATE_OF_INCIDENT: "Per reviewed security footage",
         FIELD_TIME_EMPLOYEE_BEGAN_WORK: "",
+        FIELD_TIME_OF_INCIDENT: "",
+        FIELD_INJURY_DESCRIPTION: "",
         FIELD_INJURIES_YES: injuries,
         FIELD_INJURIES_NO: not injuries,
     }
-
-    if primary:
-        stamp = _format_timestamp(primary)
-        if stamp:
-            values[FIELD_TIME_OF_INCIDENT] = stamp
 
     location = _extract_location(summary, events)
     if location:
@@ -198,11 +351,6 @@ def safety_report_to_form_values(report: dict) -> dict[str, str | bool]:
     incident_description = _incident_description(events, summary)
     if incident_description:
         values[FIELD_INCIDENT_DESCRIPTION] = incident_description
-
-    if injuries:
-        injury_description = _injuries_description(events)
-        if injury_description:
-            values[FIELD_INJURY_DESCRIPTION] = injury_description
 
     equipment = _involved_equipment(events)
     if equipment:
@@ -363,12 +511,27 @@ def _render_incident_report_pdf(values: dict[str, str | bool]) -> bytes:
 def fill_incident_report(
     safety_report: dict,
     *,
+    video_path: str | Path | None = None,
     template_path: Path | None = None,
+    record_model_call: ModelCallRecorder = None,
 ) -> Path:
     """Return path to a filled, editable Workplace Incident Report PDF."""
     del template_path  # Template is generated programmatically.
 
     values = safety_report_to_form_values(safety_report)
+    if video_path is not None:
+        values = enrich_incident_report_fields(
+            safety_report,
+            video_path,
+            values,
+            record_model_call=record_model_call,
+        )
+    else:
+        logger.warning(
+            "Incident report enrichment skipped: no video path was provided for the "
+            "second model call."
+        )
+
     pdf_bytes = _render_incident_report_pdf(values)
 
     fd, tmp_name = tempfile.mkstemp(suffix="_incident_report.pdf", prefix="perceptron_")
