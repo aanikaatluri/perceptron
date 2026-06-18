@@ -43,21 +43,22 @@ Worker safety, regulatory exposure, and insurance outcomes all depend on getting
 
 ```mermaid
 graph TD
-    U["Security Footage"]
-    UI["Gradio App"]
+    U["User uploads security footage"]
+    UI["Gradio Web App"]
 
     U --> UI
 
     UI --> API["Perceptron Mk1"]
 
-    API --> Incident["Safety Incident Analysis"]
+    API --> Report["Structured Incident Report"]
+    API --> Clips["Timestamped Evidence Clips"]
 
-    Incident --> Report["Structured Safety Report"]
-    Incident --> Clips["Evidence Clips"]
+    Report --> PDF["Auto-filled Injury Report PDF"]
 
-    Report --> PDF["Auto-filled Injury Form"]
+    UI --> FB["User Feedback"]
 
-    Incident -. "traces" .-> LF["Langfuse"]
+    API -. "traces" .-> LF["Langfuse"]
+    FB -. "ratings" .-> LF
 ```
 
 **One user-facing flow (Flow A — Safety Incident Review)**, up to **three Mk1 call sites** per successful run:
