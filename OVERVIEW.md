@@ -45,34 +45,21 @@ Worker safety, regulatory exposure, and insurance outcomes all depend on getting
 
 ```mermaid
 graph TD
-    U[User uploads security clip]
-    UI[Gradio UI on HF Space]
+    U["Security Footage"]
+    UI["Gradio App"]
+
     U --> UI
 
-    UI --> Prep[compress_video.prepare_video_for_upload]
-    Prep -->|MP4 H.264 ≤15 MB · trim ~128s| Stream[incident_review_stream]
+    UI --> API["Perceptron Mk1"]
 
-    Stream --> Q1["question · video + prompt<br/>reasoning=True · pydantic_format SafetyReport<br/>stream=True"]
-    Q1 --> API[Perceptron Mk1 API]
+    API --> Incident["Safety Incident Analysis"]
 
-    API -.SSE: reasoning.delta + text.delta + final.-> Stream
+    Incident --> Report["Structured Safety Report"]
+    Incident --> Clips["Evidence Clips"]
 
-    Stream --> JSON[Structured SafetyReport JSON]
-    JSON --> Map[safety_report_to_form_values]
-    Map --> Q2["question · injury inference<br/>primary event timestamp range"]
-    Map --> Q3["question · on-screen date/time<br/>if visible in footage"]
-    Q2 --> API
-    Q3 --> API
-    Q2 --> PDF[ReportLab fillable PDF]
-    Q3 --> PDF
+    Report --> PDF["Auto-filled Injury Form"]
 
-    UI --> FB[+/- feedback + optional comment]
-
-    Stream -.FlowTrace span.-> LF[Langfuse · traces + scores]
-    Q1 -.generation span.-> LF
-    Q2 -.generation span.-> LF
-    Q3 -.generation span.-> LF
-    FB -.user-rating score.-> LF
+    Incident -. "traces" .-> LF["Langfuse"]
 ```
 
 **One user-facing flow (Flow A — Safety Incident Review)**, up to **three Mk1 call sites** per successful run:
