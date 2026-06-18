@@ -61,6 +61,6 @@ Each analysis run traces:
 - **Flow span** (`flow-a-incident-review` / `flow-b-visual-search` / `flow-c-injury-report` / `flow-d-workplace-incident`) — explicit trace I/O (video metadata + query only, no raw bytes), structured JSON output, event/match counts
 - **Generation span** (`perceptron-mk1`) — nested model call with prompt and clip/error summaries
 - **Session grouping** — Gradio `session_hash` propagated via `propagate_attributes`
-- **User feedback scores** — thumbs up/down (`user-thumbs` boolean score) with optional comments
+- **User feedback scores** — thumbs up/down (`user-rating` boolean score) with optional comments
 
 Use Langfuse to filter low-rated traces, build annotation queues, and export datasets for regression testing.

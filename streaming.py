@@ -25,13 +25,10 @@ def format_progress(
     *,
     status: str,
     reasoning: str = "",
-    output_preview: str = "",
 ) -> str:
     sections = [f"**{status}**"]
     if reasoning:
         sections.append(f"### Reasoning\n\n{reasoning}")
-    if output_preview:
-        sections.append(f"### Output (streaming)\n\n```\n{output_preview}\n```")
     return "\n\n".join(sections)
 
 
@@ -61,14 +58,18 @@ def consume_question_stream(
     *,
     status: str = "Analyzing video with Perceptron Mk1…",
     **kwargs: Any,
-) -> Iterator[tuple[str, PerceiveResult | None]]:
-    """Yield ``(progress_markdown, None)`` while streaming; final yield includes the result."""
+) -> Iterator[tuple[str, str, PerceiveResult | None]]:
+    """Yield ``(reasoning_markdown, stream_output, None)`` while streaming.
+
+    ``stream_output`` is the in-progress structured response text for the output panel.
+    The final yield includes the parsed ``PerceiveResult``.
+    """
     reasoning_parts: list[str] = []
     text_parts: list[str] = []
     current_status = status
     stream_kwargs = {**kwargs, "stream": True}
 
-    yield format_progress(status=current_status), None
+    yield format_progress(status=current_status), "", None
 
     try:
         stream = question(media, prompt, **stream_kwargs)
@@ -96,8 +97,7 @@ def consume_question_stream(
                 yield format_progress(
                     status=current_status,
                     reasoning="".join(reasoning_parts),
-                    output_preview=_preview_text(text_parts),
-                ), None
+                ), _preview_text(text_parts), None
                 continue
 
             if event_type == "text.delta":
@@ -106,8 +106,7 @@ def consume_question_stream(
                 yield format_progress(
                     status=current_status,
                     reasoning="".join(reasoning_parts),
-                    output_preview=_preview_text(text_parts),
-                ), None
+                ), _preview_text(text_parts), None
                 continue
 
             if event_type == "error":
@@ -131,8 +130,7 @@ def consume_question_stream(
                 yield format_progress(
                     status="Finalizing response…",
                     reasoning="".join(reasoning_parts),
-                    output_preview=_preview_text(text_parts),
-                ), final_result
+                ), _preview_text(text_parts), final_result
     except PerceptronTimeoutError:
         raise
     except Exception as exc:
@@ -161,8 +159,8 @@ def _fallback_non_stream(
     stream_kwargs: dict[str, Any],
     *,
     status: str,
-) -> Iterator[tuple[str, PerceiveResult | None]]:
-    yield format_progress(status=status), None
+) -> Iterator[tuple[str, str, PerceiveResult | None]]:
+    yield format_progress(status=status), "", None
     try:
         result = _non_streaming_question(media, prompt, **stream_kwargs)
     except PerceptronTimeoutError:
@@ -170,7 +168,7 @@ def _fallback_non_stream(
     except Exception as exc:
         raise RuntimeError(str(exc)) from exc
     reasoning = getattr(result, "reasoning", None) or ""
-    yield format_progress(status="Complete.", reasoning=reasoning), result
+    yield format_progress(status="Complete.", reasoning=reasoning), (result.text or ""), result
 
 
 def _preview_text(parts: list[str], limit: int = 4000) -> str:

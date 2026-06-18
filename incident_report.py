@@ -22,13 +22,13 @@ ModelCallRecorder = Callable[[str, dict[str, Any], Any], None] | None
 
 INJURY_INFERENCE_PROMPT = (
     "Look at the clip {timestamp_range} of this incident where {description}. "
-    "Infer the most likely potential injuries that could have been sustained from this incident based on the clip. Be concise and only include the most likely injuries."
+    "Infer the most likely potential injuries that could have been sustained from this incident based on the clip. Be concise and only include the most likely injuries. Always begin your response with 'According to the video footage, the most likely injuries are:'"
 )
 
 INCIDENT_DATETIME_PROMPT = (
-    "Look for a timestamp in the video in the clip {timestamp_range}. "
-    "Return the available date MM/DD/YY and time MM:SS information if available, "
-    "otherwise return an empty string."
+    "Look for an on-screen timestamp in the video during the clip {timestamp_range}. "
+    "If visible, return the date and time on one line in this exact format: MM/DD/YY HH:MM "
+    "(example: 03/15/26 14:32). If no on-screen date and time are visible, return an empty string."
 )
 
 FIELD_DATE_OF_INCIDENT = "date_of_incident"
@@ -59,6 +59,34 @@ _EQUIPMENT_HINTS = re.compile(
     r")\b",
     re.IGNORECASE,
 )
+
+_INCIDENT_DATE_RE = re.compile(r"\b(\d{1,2}/\d{1,2}/\d{2,4})\b")
+_INCIDENT_TIME_RE = re.compile(r"\b(\d{1,2}:\d{2}(?::\d{2})?)\b")
+
+
+def _normalize_incident_date(date_str: str) -> str:
+    month, day, year = date_str.split("/")
+    if len(year) == 4:
+        year = year[-2:]
+    return f"{int(month):02d}/{int(day):02d}/{year}"
+
+
+def _normalize_incident_time(time_str: str) -> str:
+    hour, minute, *_rest = time_str.split(":")
+    return f"{int(hour):02d}:{minute[:2]}"
+
+
+def _parse_incident_datetime_response(text: str) -> tuple[str, str]:
+    """Extract MM/DD/YY and HH:MM from the enrichment model response."""
+    cleaned = text.strip()
+    if not cleaned:
+        return "", ""
+
+    date_match = _INCIDENT_DATE_RE.search(cleaned)
+    time_match = _INCIDENT_TIME_RE.search(cleaned)
+    incident_date = _normalize_incident_date(date_match.group(1)) if date_match else ""
+    incident_time = _normalize_incident_time(time_match.group(1)) if time_match else ""
+    return incident_date, incident_time
 
 
 def _severity_rank(event: dict) -> int:
@@ -242,11 +270,15 @@ def enrich_incident_report_fields(
         )
 
     try:
-        enriched[FIELD_TIME_OF_INCIDENT] = _infer_incident_datetime_from_video(
+        datetime_text = _infer_incident_datetime_from_video(
             path,
             timestamp_range,
             record_model_call=record_model_call,
         )
+        incident_date, incident_time = _parse_incident_datetime_response(datetime_text)
+        enriched[FIELD_TIME_OF_INCIDENT] = incident_time
+        if incident_date:
+            enriched[FIELD_DATE_OF_INCIDENT] = incident_date
     except Exception as exc:
         enriched[FIELD_TIME_OF_INCIDENT] = ""
         logger.warning(
@@ -259,30 +291,32 @@ def enrich_incident_report_fields(
     return enriched
 
 
-def _extract_location(summary: str, events: list[dict]) -> str:
-    for event in events:
-        evidence = (event.get("visual_evidence") or "").strip()
-        for pattern in (
-            r"(?:loading dock|warehouse|aisle|bay|zone|dock|floor|room|area|camera)\s+[\w\s\-#]+",
-            r"(?:near|at|in)\s+the\s+[\w\s\-]+",
-        ):
-            match = re.search(pattern, evidence, re.IGNORECASE)
-            if match:
-                return match.group(0).strip().rstrip(".,;")
-    if summary:
-        return "Per reviewed security footage (see incident description)."
-    return ""
+def _format_previous_activity(
+    body: str,
+    video_path: str | Path | None,
+) -> str:
+    content = body.strip()
+    if not content:
+        return ""
+    filename = Path(video_path).name if video_path else "the uploaded clip"
+    return f"according to the video footage from {filename}, {content}"
 
 
-def _previous_activity(events: list[dict], summary: str) -> str:
+def _previous_activity(
+    events: list[dict],
+    summary: str,
+    video_path: str | Path | None = None,
+) -> str:
     primary = _primary_event(events)
     if primary:
         description = (primary.get("description") or "").strip()
         evidence = (primary.get("visual_evidence") or "").strip()
         if description and evidence:
-            return f"{description}\n\nObserved cues: {evidence}"
-        return description or evidence
-    return summary
+            body = f"{description}\n\nObserved cues: {evidence}"
+        else:
+            body = description or evidence
+        return _format_previous_activity(body, video_path)
+    return _format_previous_activity(summary, video_path)
 
 
 def _incident_description(events: list[dict], summary: str) -> str:
@@ -325,26 +359,27 @@ def _involved_equipment(events: list[dict]) -> str:
     return ", ".join(found)
 
 
-def safety_report_to_form_values(report: dict) -> dict[str, str | bool]:
+def safety_report_to_form_values(
+    report: dict,
+    *,
+    video_path: str | Path | None = None,
+) -> dict[str, str | bool]:
     """Map Flow A safety report JSON to workplace incident form values."""
     events = list(report.get("events") or [])
     summary = (report.get("summary") or "").strip()
     injuries = _suggests_injury(events)
 
     values: dict[str, str | bool] = {
-        FIELD_DATE_OF_INCIDENT: "Per reviewed security footage",
+        FIELD_DATE_OF_INCIDENT: "",
         FIELD_TIME_EMPLOYEE_BEGAN_WORK: "",
+        FIELD_LOCATION: "",
         FIELD_TIME_OF_INCIDENT: "",
         FIELD_INJURY_DESCRIPTION: "",
         FIELD_INJURIES_YES: injuries,
         FIELD_INJURIES_NO: not injuries,
     }
 
-    location = _extract_location(summary, events)
-    if location:
-        values[FIELD_LOCATION] = location
-
-    previous_activity = _previous_activity(events, summary)
+    previous_activity = _previous_activity(events, summary, video_path)
     if previous_activity:
         values[FIELD_ACTIVITY_BEFORE] = previous_activity
 
@@ -518,7 +553,7 @@ def fill_incident_report(
     """Return path to a filled, editable Workplace Incident Report PDF."""
     del template_path  # Template is generated programmatically.
 
-    values = safety_report_to_form_values(safety_report)
+    values = safety_report_to_form_values(safety_report, video_path=video_path)
     if video_path is not None:
         values = enrich_incident_report_fields(
             safety_report,

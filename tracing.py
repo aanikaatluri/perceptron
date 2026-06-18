@@ -13,7 +13,7 @@ from typing import Any
 from langfuse import get_client, propagate_attributes
 
 TRACE_ID_KEY = "langfuse_trace_id"
-SCORE_NAME_USER_THUMBS = "user-thumbs"
+SCORE_NAME_USER_RATING = "user-rating"
 MODEL_ID = "perceptron-mk1"
 
 
@@ -150,7 +150,7 @@ def submit_user_feedback(
     try:
         get_client().create_score(
             trace_id=trace_id,
-            name=SCORE_NAME_USER_THUMBS,
+            name=SCORE_NAME_USER_RATING,
             value=1.0 if helpful else 0.0,
             data_type="BOOLEAN",
             comment=comment.strip() or None,
@@ -161,7 +161,7 @@ def submit_user_feedback(
         return f"Failed to record feedback: {exc}"
 
     label = "positive" if helpful else "negative"
-    return f"Recorded {label} feedback (`{SCORE_NAME_USER_THUMBS}`) for trace `{trace_id[:8]}…`."
+    return f"Recorded {label} feedback (`{SCORE_NAME_USER_RATING}`) for trace `{trace_id[:8]}…`."
 
 
 def flush_tracing() -> None:

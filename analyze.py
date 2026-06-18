@@ -186,6 +186,14 @@ def _report_to_api_shape(report: SafetyReport) -> dict:
     }
 
 
+def _safety_report_display_json(payload: dict) -> str:
+    display = dict(payload)
+    display.pop("incident_report_pdf", None)
+    display.pop("form_5020_pdf", None)
+    display.pop("reasoning", None)
+    return format_json(display)
+
+
 def _incident_detected(extraction: OccupationalInjuryExtraction) -> bool:
     return bool(
         extraction.sequence_of_events.strip()
@@ -314,12 +322,14 @@ def _perceptron_question(media, prompt: str, **kwargs):
     return result
 
 
-def _stream_perceptron_question(media, prompt: str, **kwargs) -> Iterator[tuple[str, object | None]]:
+def _stream_perceptron_question(
+    media, prompt: str, **kwargs
+) -> Iterator[tuple[str, str, object | None]]:
     last_result = None
-    for progress, result in consume_question_stream(media, prompt, **kwargs):
+    for progress, stream_output, result in consume_question_stream(media, prompt, **kwargs):
         if result is not None:
             last_result = result
-        yield progress, result
+        yield progress, stream_output, result
     if last_result is None:
         raise RuntimeError("Perceptron stream ended without a final result.")
 
@@ -475,13 +485,17 @@ def incident_review_stream(
 
         try:
             result = None
-            for progress, partial in _stream_perceptron_question(
+            for progress, stream_output, partial in _stream_perceptron_question(
                 video(str(path)),
                 prompt,
                 **gen_kwargs,
             ):
                 if partial is None:
-                    yield FlowUpdate(reasoning=progress, trace_id=trace.trace_id)
+                    yield FlowUpdate(
+                        reasoning=progress,
+                        output=stream_output,
+                        trace_id=trace.trace_id,
+                    )
                 else:
                     result = partial
         except PerceptronTimeoutError:
@@ -517,8 +531,13 @@ def incident_review_stream(
         payload["structured_output_schema"] = SafetyReport.__name__
         payload["event_count"] = len(report.events)
 
+        safety_report_json = _safety_report_display_json(payload)
         yield FlowUpdate(
-            reasoning=format_progress(status="Enriching incident report fields…"),
+            reasoning=format_progress(
+                status="Safety report ready. Compiling incident report…",
+                reasoning=result.reasoning or "",
+            ),
+            output=safety_report_json,
             trace_id=trace.trace_id,
         )
 
@@ -591,7 +610,7 @@ def visual_search_stream(
 
         try:
             result = None
-            for progress, partial in _stream_perceptron_question(
+            for progress, stream_output, partial in _stream_perceptron_question(
                 video(str(path)),
                 prompt,
                 **gen_kwargs,
@@ -699,7 +718,7 @@ def occupational_injury_report_stream(
 
         try:
             result = None
-            for progress, partial in _stream_perceptron_question(
+            for progress, stream_output, partial in _stream_perceptron_question(
                 video(str(path)),
                 prompt,
                 **gen_kwargs,
@@ -962,7 +981,7 @@ def workplace_incident_report_stream(
 
         try:
             result = None
-            for progress, partial in _stream_perceptron_question(
+            for progress, stream_output, partial in _stream_perceptron_question(
                 video(str(path)),
                 prompt,
                 **gen_kwargs,
