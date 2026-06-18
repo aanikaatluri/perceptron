@@ -35,7 +35,7 @@ The audience spans three tiers with the same underlying primitive:
 | **Compliance** | EHS, risk, and insurance investigators | Consistent, evidence-linked documentation for audits and claims |
 | **Platform** | VMS vendors, integrators, and enterprise AI teams | A model layer on top of existing camera infrastructure |
 
-Worker safety, regulatory exposure, and insurance outcomes all depend on getting incident documentation right. Automating the *review and draft* step while keeping humans in the loop for sign-off improves efficiency while maintaining accuracy. Applying Mk1's reasoning capabilities to this domain will save billable hours from attorneys, medicolegal experts, and workplace safety analysts while also being seamlessly integrated into other workflows for workplace injury management  
+Worker safety, regulatory exposure, and insurance outcomes all depend on getting incident documentation right. Automating the *review and draft* step while keeping humans in the loop for sign-off improves efficiency while maintaining accuracy. Applying Mk1's reasoning capabilities to this domain will save billable hours from attorneys, medicolegal experts, and workplace safety analysts while also being seamlessly integrated into other workflows for workplace injury management.
 
 
 ## Architecture
