@@ -25,7 +25,7 @@ The existing tooling splits into two camps and misses the middle:
 - **Traditional VMS / CCTV platforms** — Milestone, Genetec, Verkada, etc. Excellent at storage, playback, and motion triggers. They detect *that something moved* but do not reason about *what safety violation occurred* or draft narrative fields for a report.
 - **Manual review + generic form software** — SharePoint forms, PDF templates, EHS suites. The human still does all visual interpretation and wording.
 
-Neither answers a natural-language question or produces a structured, timestamped event list tied to visual evidence. That gap is where a **VLM with semantic video understanding and structured output** belongs.
+Neither answers a natural-language question or produces a structured, timestamped event list tied to visual evidence. This gap is where a **VLM with semantic video understanding and structured output** can make a meaningful impact.
 
 The audience spans three tiers with the same underlying primitive:
 
