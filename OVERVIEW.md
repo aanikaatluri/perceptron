@@ -86,7 +86,7 @@ Deploy artifacts: `requirements.txt`, `apt.txt` (ffmpeg on Hugging Face Spaces),
 
 ## Methodology
 
-**1. Define the output contract first.** \\
+**1. Define the output contract first.** 
 Before touching UI code, the `SafetyReport` Pydantic schema locked down what "done" looks like: `overall_summary`, a list of `SafetyEvent` objects (type, severity, MM:SS window, description, visual evidence, recommended action), and `requires_human_review` for triage. Field descriptions double as prompt guidance for Mk1 via `pydantic_format(..., strict=True)`.
 
 **2. Compression and conversion pipeline.** 
@@ -101,7 +101,7 @@ The Gradio app calls `prepare_video_for_upload` automatically on Analyze; the CL
 **3. Structured incident review.** 
 One focused prompt asks for every observable safety event, near-miss, or policy violation — with an explicit constraint to **cite only what is directly visible on camera**. Chain-of-thought reasoning is enabled so reviewers (and Langfuse traces) can audit *why* the model flagged each event.
 
-**4. PDF workflow as a second layer** 
+**4. PDF information retrieval.** 
 The app maps structured JSON to workplace form fields heuristically:
 - Runs **two narrow follow-up video questions** on the primary (highest-severity) event for fields that need additional verification: likely injuries and on-screen date/time
 - Renders a **fillable AcroForm PDF** programmatically with ReportLab so safety managers can edit before filing
@@ -161,21 +161,9 @@ The primary audience is workplace safety teams responsible for investigating inc
 
 The most valuable extensions move from analyzing a single uploaded clip to operating over a facility's footage backlog.
 
-**1. Temporal clip export at event timestamps.** The structured report already carries MM:SS windows per event. Pair Mk1's analysis with an **ffmpeg harness** (or MCP server) to cut evidentiary subclips for each flagged event and attach them to the PDF or case file — the same composition pattern as grounded `<clip>` tags, but driven off schema timestamps.
 
-```mermaid
-graph LR
-    Clip[Uploaded security clip]
-    Mk1[Mk1 SafetyReport]
-    Clip --> Mk1
-    Mk1 --> Events[Event list with MM:SS windows]
-    Events --> FF[ffmpeg extract subclips]
-    FF --> Evidence[Per-event video evidence files]
-    Evidence --> PDF[Incident packet · PDF + clips]
-```
+**1. Agentic search over long archives.** An orchestrator could decompose searches into parallel Mk1 calls over candidate segments, verify reasoning against returned events, and escalate only high-severity hits to human review — turning the current single-clip demo into a **semantic search layer** on top of NVR exports.
 
-**2. Agentic search over long archives.** An orchestrator could decompose searches into parallel Mk1 calls over candidate segments, verify reasoning against returned events, and escalate only high-severity hits to human review — turning the current single-clip demo into a **semantic search layer** on top of NVR exports.
+**2. VMS and EHS integrations.** Webhook or MCP adapters that pull clips from Verkada/Genetec/Milestone by camera ID and time range, and then push completed reports into ServiceNow, Enablon, or insurer portals.
 
-**3. VMS and EHS integrations.** Webhook or MCP adapters that pull clips from Verkada/Genetec/Milestone by camera ID and time range, push completed reports into ServiceNow, Enablon, or insurer portals.
-
-**5. Jurisdiction-specific form variants.** Support the filing of additional forms, such as OSHA 301, WSIB, and state workers' comp layouts. The same `SafetyReport` intermediate representation could be used to populate different PDF templates.
+**3. Jurisdiction-specific form variants.** Support the filing of additional forms, such as OSHA 301, WSIB, and state workers' comp layouts. The same `SafetyReport` intermediate representation could be used to populate different PDF templates.
