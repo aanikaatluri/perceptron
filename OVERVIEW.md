@@ -1,5 +1,3 @@
-# Workplace Injury Reviewer — built on Perceptron Mk1
-
 ## Intro
 
 **Incident video review** is the backbone of workplace safety investigations — determining what happened, who or what was involved, whether policy was violated, and what should go on the official report. Doing it manually is slow, expensive, and inconsistent. Investigators may scrub hours of CCTV to find a few seconds of relevance, then transcribe observations into forms that insurers, OSHA, and internal safety teams all expect in a standard shape.
@@ -38,6 +36,7 @@ The audience spans three tiers with the same underlying primitive:
 | **Platform** | VMS vendors, integrators, and enterprise AI teams | A model layer on top of existing camera infrastructure |
 
 Worker safety, regulatory exposure, and insurance outcomes all depend on getting incident documentation right. Automating the *review and draft* step — while keeping humans in the loop for sign-off — is high leverage.
+
 
 ## Architecture
 
