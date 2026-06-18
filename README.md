@@ -1,9 +1,9 @@
 
 # Workplace Injury Reviewer — built on [Perceptron Mk1](https://docs.perceptron.inc)
 
-Workplace injuries often require safety teams to review video footage, determine what happened, identify contributing factors, and complete incident reports. This process is important for worker safety, regulatory compliance, and insurance investigations.
+Workplace injuries often require safety teams to review video footage, determine what happened, identify contributing factors, and complete incident reports. This process is important for worker safety, regulatory compliance, and insurance investigations. Manual video review is slow and time-consuming. Investigators may need to search through hours of footage to find the incident, identify equipment involved, and document the sequence of events.
 
-Manual video review is slow and time-consuming. Investigators may need to search through hours of footage to find the incident, identify equipment involved, and document the sequence of events.
+This project demonstrates how foundation models can serve as a practical layer of intelligence on top of workplace safety footage, reducing review time while keeping claims tied to what is actually visible on camera.
 
 This application uses **Perceptron Mk1** to turn workplace safety footage into structured incident reports. Users upload a clip and receive a grounded, timestamped analysis of the incident, equipment involved, worker activity, and key events.
 
@@ -22,19 +22,6 @@ The system follows a workplace reporting workflow: it automatically fills report
 
 Output is constrained to a Pydantic `SafetyReport` schema, keeping responses consistent and machine-readable.
 
-## Who it is useful for
-
-- Warehouse and logistics operators
-- Manufacturing facilities
-- Construction companies
-- Workplace safety teams
-- Insurance investigators
-- Compliance and risk management organizations
-
-## Why it matters
-
-This project demonstrates how foundation models can serve as a practical layer of intelligence on top of workplace safety footage, reducing review time while keeping claims tied to what is actually visible on camera.
-
 
 ## Local development
 
@@ -45,14 +32,8 @@ pip install -r requirements.txt
 cp .env.example .env   # add your PERCEPTRON_API_KEY
 python app.py          # Gradio UI at http://127.0.0.1:7860
 python safety_check.py /path/to/video.mp4   # CLI
-python compress_video.py /path/to/clip.mov    # convert + compress for upload
+python compress_video.py /path/to/clip.mov    # convert + compress videos for upload
 ```
-
-## Current Limitations
-
-- Video must end up as **MP4 under ~15 MB** (API request body cap is 20 MB). MOV and other formats are **auto-converted when you click Analyze** (requires ffmpeg; included on HF Spaces via `apt.txt`).
-- Perceptron meaningfully samples the first **~2 minutes** of each clip; oversized uploads are trimmed automatically when compressing.
-- CLI prep: `python compress_video.py your_clip.mov` (requires [ffmpeg](https://ffmpeg.org/)).
 
 ## Langfuse observability
 
@@ -64,5 +45,3 @@ Each analysis run traces:
 - **Generation span** (`perceptron-mk1`) — model call with prompt and clip/error summaries
 - **Session grouping** — Gradio `session_hash` propagated via `propagate_attributes`
 - **User feedback scores** — thumbs up/down (`user-rating` boolean score) with optional comments
-
-Use Langfuse to filter low-rated traces, build annotation queues, and export datasets for regression testing.
