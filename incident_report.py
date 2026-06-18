@@ -299,7 +299,7 @@ def _format_previous_activity(
     if not content:
         return ""
     filename = Path(video_path).name if video_path else "the uploaded clip"
-    return f"according to the video footage from {filename}, {content}"
+    return f"According to the video footage from {filename}, {content}"
 
 
 def _previous_activity(
