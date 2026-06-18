@@ -127,7 +127,6 @@ def attach_trace_id(payload: dict[str, Any]) -> dict[str, Any]:
 
 def pop_trace_id(payload: dict[str, Any]) -> tuple[dict[str, Any], str]:
     trace_id = str(payload.pop(TRACE_ID_KEY, "") or "")
-    payload.pop("latency_ms", None)
     return payload, trace_id
 
 
@@ -237,11 +236,6 @@ class FlowTrace:
             }
         )
         generation.end()
-
-    def attach(self, payload: dict[str, Any]) -> dict[str, Any]:
-        if self.trace_id:
-            payload[TRACE_ID_KEY] = self.trace_id
-        return payload
 
     def end(self) -> None:
         if self._root is not None:

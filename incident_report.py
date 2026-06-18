@@ -1,4 +1,4 @@
-"""Generate and fill a Workplace Incident Report PDF from Flow A safety data."""
+"""Generate and fill a Workplace Incident Report PDF from safety data."""
 
 from __future__ import annotations
 
@@ -364,7 +364,7 @@ def safety_report_to_form_values(
     *,
     video_path: str | Path | None = None,
 ) -> dict[str, str | bool]:
-    """Map Flow A safety report JSON to workplace incident form values."""
+    """Map safety report JSON to workplace incident form values."""
     events = list(report.get("events") or [])
     summary = (report.get("summary") or "").strip()
     injuries = _suggests_injury(events)
@@ -571,12 +571,9 @@ def fill_incident_report(
     *,
     video_path: str | Path | None = None,
     source_video_path: str | Path | None = None,
-    template_path: Path | None = None,
     record_model_call: ModelCallRecorder = None,
 ) -> Path:
     """Return path to a filled, editable Workplace Incident Report PDF."""
-    del template_path  # Template is generated programmatically.
-
     values = safety_report_to_form_values(safety_report, video_path=video_path)
     if video_path is not None:
         values = enrich_incident_report_fields(

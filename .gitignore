@@ -2,3 +2,8 @@
 __pycache__/
 *.pyc
 .env
+
+# Cursor / agent Langfuse skill (local dev only)
+skills-lock.json
+.agents/skills/langfuse/
+.cursor/skills/langfuse

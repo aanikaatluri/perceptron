@@ -1,29 +1,40 @@
----
-title: Workplace Safety Video Analytics
-emoji: 🦺
-colorFrom: blue
-colorTo: green
-sdk: gradio
-sdk_version: "5.50.0"
-app_file: app.py
-pinned: false
-license: mit
----
 
-# Workplace Safety Video Analytics
+# Workplace Injury Reviewer — built on [Perceptron Mk1](https://docs.perceptron.inc)
 
-Enterprise-style safety analytics over short security clips, powered by [Perceptron Mk1](https://docs.perceptron.inc).
+Workplace injuries often require safety teams to review video footage, determine what happened, identify contributing factors, and complete incident reports. This process is important for worker safety, regulatory compliance, and insurance investigations.
 
-## Flow A — Safety Incident Review
+Manual video review is slow and time-consuming. Investigators may need to search through hours of footage to find the incident, identify equipment involved, and document the sequence of events.
 
-Upload a security clip → structured JSON report with timestamped events, severity, visual evidence, and recommended actions. Output is constrained to a Pydantic `SafetyReport` schema via `pydantic_format()`. A fillable **Workplace Incident Report** PDF is generated from the same analysis (JSON output is unchanged).
+This application uses **Perceptron Mk1** to turn workplace safety footage into structured incident reports. Users upload a clip and receive a grounded, timestamped analysis of the incident, equipment involved, worker activity, and key events.
 
-## Hugging Face Spaces setup
+The system follows a workplace reporting workflow: it automatically fills report fields using only visually verified information and links findings to supporting video evidence.
 
-1. Create a new **Gradio** Space on [huggingface.co/new-space](https://huggingface.co/new-space).
-2. Push this repository (`app.py`, `analyze.py`, `models.py`, `requirements.txt`, `README.md`).
-3. In **Settings → Repository secrets**, add `PERCEPTRON_API_KEY`.
-4. Open the **App** tab after the build finishes.
+## What it does
+
+1. **Upload a security clip** (MP4, WebM, MOV, and other common formats; auto-converted on analyze).
+2. **Run structured incident review** — Perceptron Mk1 returns a JSON safety report with:
+   - Timestamped events (MM:SS aligned to the clip)
+   - Severity ratings (low / medium / high)
+   - Visual evidence and recommended corrective actions
+   - An executive summary and human-review flag
+3. **Download a Workplace Incident Report PDF** — a fillable form populated from the analysis, with an additional model pass for injury description and on-screen date/time when visible in the footage.
+4. **Track performance with Langfuse** — each run is traced end-to-end (latency, structured outputs, session grouping), and reviewers can submit  feedback so teams can measure quality, spot failures, and improve the workflow over time.
+
+Output is constrained to a Pydantic `SafetyReport` schema, keeping responses consistent and machine-readable.
+
+## Who it is useful for
+
+- Warehouse and logistics operators
+- Manufacturing facilities
+- Construction companies
+- Workplace safety teams
+- Insurance investigators
+- Compliance and risk management organizations
+
+## Why it matters
+
+This project demonstrates how foundation models can serve as a practical layer of intelligence on top of workplace safety footage, reducing review time while keeping claims tied to what is actually visible on camera.
+
 
 ## Local development
 
@@ -33,11 +44,11 @@ source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env   # add your PERCEPTRON_API_KEY
 python app.py          # Gradio UI at http://127.0.0.1:7860
-python safety_check.py /path/to/video.mp4   # Flow A CLI
+python safety_check.py /path/to/video.mp4   # CLI
 python compress_video.py /path/to/clip.mov    # convert + compress for upload
 ```
 
-## Limits
+## Current Limitations
 
 - Video must end up as **MP4 under ~15 MB** (API request body cap is 20 MB). MOV and other formats are **auto-converted when you click Analyze** (requires ffmpeg; included on HF Spaces via `apt.txt`).
 - Perceptron meaningfully samples the first **~2 minutes** of each clip; oversized uploads are trimmed automatically when compressing.
@@ -48,8 +59,9 @@ python compress_video.py /path/to/clip.mov    # convert + compress for upload
 Set `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, and optionally `LANGFUSE_BASE_URL` in `.env` or Space secrets.
 
 Each analysis run traces:
-- **Flow span** (`flow-a-incident-review`) — explicit trace I/O (video metadata only, no raw bytes), structured JSON output, event counts
-- **Generation span** (`perceptron-mk1`) — nested model call with prompt and clip/error summaries
+
+- **Flow span** (`flow-a-incident-review`) — video metadata (no raw bytes), structured JSON output, event counts
+- **Generation span** (`perceptron-mk1`) — model call with prompt and clip/error summaries
 - **Session grouping** — Gradio `session_hash` propagated via `propagate_attributes`
 - **User feedback scores** — thumbs up/down (`user-rating` boolean score) with optional comments
 

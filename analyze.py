@@ -1,4 +1,4 @@
-"""Safety video analysis: structured incident review (Flow A)."""
+"""Safety video analysis: structured incident review"""
 
 import json
 import os
@@ -94,11 +94,54 @@ def _report_to_api_shape(report: SafetyReport) -> dict:
     }
 
 
-def _safety_report_display_json(payload: dict) -> str:
-    display = dict(payload)
-    display.pop("incident_report_pdf", None)
-    display.pop("reasoning", None)
+def _payload_from_result(result) -> tuple[dict | None, dict | None]:
+    """Return ``(success_payload, error_payload)``; exactly one side is non-None."""
+    if result.errors:
+        return None, {"error": "Model returned validation warnings.", "details": result.errors}
+
+    try:
+        report = SafetyReport.model_validate_json(result.text)
+    except Exception as exc:
+        return None, {
+            "error": "Failed to parse structured safety report.",
+            "raw_text": result.text,
+            "details": str(exc),
+        }
+
+    payload = _report_to_api_shape(report)
+    if result.reasoning:
+        payload["reasoning"] = result.reasoning
+    payload["structured_output_schema"] = SafetyReport.__name__
+    payload["event_count"] = len(report.events)
+    return payload, None
+
+
+def _display_json(payload: dict) -> str:
+    display = {k: v for k, v in payload.items() if k not in ("incident_report_pdf", "reasoning")}
     return format_json(display)
+
+
+def _attach_incident_pdf(
+    payload: dict,
+    *,
+    video_path: Path,
+    source_video_path: Path,
+    record_model_call,
+) -> str | None:
+    try:
+        pdf_path = str(
+            fill_incident_report(
+                payload,
+                video_path=video_path,
+                source_video_path=source_video_path,
+                record_model_call=record_model_call,
+            )
+        )
+        payload["incident_report_pdf"] = pdf_path
+        return pdf_path
+    except Exception as exc:
+        payload["pdf_error"] = f"Could not generate incident report PDF: {exc}"
+        return None
 
 
 @observe(
@@ -113,24 +156,11 @@ def _perceptron_question(media, prompt: str, **kwargs):
     return result
 
 
-def _stream_perceptron_question(
-    media, prompt: str, **kwargs
-) -> Iterator[tuple[str, str, object | None]]:
-    last_result = None
-    for progress, stream_output, result in consume_question_stream(media, prompt, **kwargs):
-        if result is not None:
-            last_result = result
-        yield progress, stream_output, result
-    if last_result is None:
-        raise RuntimeError("Perceptron stream ended without a final result.")
-
-
 def _flow_error_update(payload: dict, *, trace: FlowTrace) -> FlowUpdate:
     trace.set_output(payload)
-    display = dict(payload)
     return FlowUpdate(
         reasoning=format_progress(status="Analysis failed."),
-        output=format_json(display),
+        output=format_json(payload),
         trace_id=trace.trace_id,
     )
 
@@ -147,12 +177,9 @@ def _flow_success_update(
         prompt, kwargs, result = generation
         trace.record_generation(prompt=prompt, kwargs=kwargs, result=result)
     trace.set_output(structured_output_for_trace(payload))
-    display = dict(payload)
-    display.pop("incident_report_pdf", None)
-    display.pop("reasoning", None)
     return FlowUpdate(
         reasoning=reasoning_md,
-        output=format_json(display),
+        output=_display_json(payload),
         trace_id=trace.trace_id,
         pdf_path=pdf_path,
     )
@@ -199,42 +226,21 @@ def incident_review(
             set_span_io(output_data=payload)
             return attach_trace_id(payload)
 
-        if result.errors:
-            payload = {"error": "Model returned validation warnings.", "details": result.errors}
-            set_span_io(output_data=payload)
-            return attach_trace_id(payload)
+        payload, error = _payload_from_result(result)
+        if error:
+            set_span_io(output_data=error)
+            return attach_trace_id(error)
 
-        try:
-            report = SafetyReport.model_validate_json(result.text)
-        except Exception as exc:
-            payload = {
-                "error": "Failed to parse structured safety report.",
-                "raw_text": result.text,
-                "details": str(exc),
-            }
-            set_span_io(output_data=payload)
-            return attach_trace_id(payload)
-
-        payload = _report_to_api_shape(report)
-        if result.reasoning:
-            payload["reasoning"] = result.reasoning
-        payload["structured_output_schema"] = SafetyReport.__name__
-        payload["event_count"] = len(report.events)
-
-        try:
-            pdf_path = fill_incident_report(
-                payload,
-                video_path=path,
-                source_video_path=source_path,
-                record_model_call=lambda prompt, kwargs, result: set_generation_io(
-                    prompt=prompt,
-                    kwargs=kwargs,
-                    result=result,
-                ),
-            )
-            payload["incident_report_pdf"] = str(pdf_path)
-        except Exception as exc:
-            payload["pdf_error"] = f"Could not generate incident report PDF: {exc}"
+        _attach_incident_pdf(
+            payload,
+            video_path=path,
+            source_video_path=source_path,
+            record_model_call=lambda prompt, kwargs, result: set_generation_io(
+                prompt=prompt,
+                kwargs=kwargs,
+                result=result,
+            ),
+        )
 
         set_span_io(output_data=structured_output_for_trace(payload))
         return attach_trace_id(payload)
@@ -278,7 +284,7 @@ def incident_review_stream(
 
         try:
             result = None
-            for progress, stream_output, partial in _stream_perceptron_question(
+            for progress, stream_output, partial in consume_question_stream(
                 video(str(path)),
                 prompt,
                 **gen_kwargs,
@@ -298,55 +304,26 @@ def incident_review_stream(
             yield _flow_error_update({"error": str(exc)}, trace=trace)
             return
 
-        if result.errors:
-            yield _flow_error_update(
-                {"error": "Model returned validation warnings.", "details": result.errors},
-                trace=trace,
-            )
+        payload, error = _payload_from_result(result)
+        if error:
+            yield _flow_error_update(error, trace=trace)
             return
 
-        try:
-            report = SafetyReport.model_validate_json(result.text)
-        except Exception as exc:
-            yield _flow_error_update(
-                {
-                    "error": "Failed to parse structured safety report.",
-                    "raw_text": result.text,
-                    "details": str(exc),
-                },
-                trace=trace,
-            )
-            return
-
-        payload = _report_to_api_shape(report)
-        if result.reasoning:
-            payload["reasoning"] = result.reasoning
-        payload["structured_output_schema"] = SafetyReport.__name__
-        payload["event_count"] = len(report.events)
-
-        safety_report_json = _safety_report_display_json(payload)
         yield FlowUpdate(
             reasoning=format_progress(
                 status="Safety report ready. Compiling incident report…",
                 reasoning=result.reasoning or "",
             ),
-            output=safety_report_json,
+            output=_display_json(payload),
             trace_id=trace.trace_id,
         )
 
-        pdf_path: str | None = None
-        try:
-            pdf_path = str(
-                fill_incident_report(
-                    payload,
-                    video_path=path,
-                    source_video_path=source_path,
-                    record_model_call=trace.record_generation,
-                )
-            )
-            payload["incident_report_pdf"] = pdf_path
-        except Exception as exc:
-            payload["pdf_error"] = f"Could not generate incident report PDF: {exc}"
+        pdf_path = _attach_incident_pdf(
+            payload,
+            video_path=path,
+            source_video_path=source_path,
+            record_model_call=trace.record_generation,
+        )
 
         reasoning_md = format_progress(status="Complete.", reasoning=result.reasoning or "")
         if pdf_path is None and payload.get("pdf_error"):

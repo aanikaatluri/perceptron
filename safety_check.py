@@ -1,5 +1,7 @@
 """CLI for Flow A structured safety incident review.
 
+Usage::
+
     python safety_check.py
     python safety_check.py /path/to/video.mp4
 """

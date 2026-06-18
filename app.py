@@ -1,4 +1,4 @@
-"""Gradio app for Hugging Face Spaces — workplace safety video analytics."""
+"""Gradio app: workplace safety video analytics."""
 
 import atexit
 import os
@@ -12,7 +12,6 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from analyze import configure_perceptron, incident_review_stream
-from models import SafetyReport
 from tracing import flush_tracing, init_tracing, is_configured, submit_user_feedback
 
 init_tracing()
@@ -107,9 +106,13 @@ def select_sample_video(evt: gr.SelectData) -> str:
     return SAMPLE_VIDEO_PATHS[evt.index]
 
 
+def _empty_review_state():
+    return "", "", "", None, gr.update(visible=False), gr.update(visible=False), gr.update(visible=False)
+
+
 def run_incident_review(uploaded_video, request: gr.Request):
     if uploaded_video is None:
-        yield "", "", "", None, gr.update(visible=False), gr.update(visible=False), gr.update(visible=False)
+        yield _empty_review_state()
         return
     report_loading = True
     pdf_loading = True
@@ -132,7 +135,7 @@ def run_incident_review(uploaded_video, request: gr.Request):
 
 def start_incident_review(uploaded_video):
     if uploaded_video is None:
-        return "", "", "", None, gr.update(visible=False), gr.update(visible=False), gr.update(visible=False)
+        return _empty_review_state()
     return "", "", "", None, gr.update(visible=True), gr.update(visible=True), gr.update(visible=True)
 
 

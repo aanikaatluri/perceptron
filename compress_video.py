@@ -43,15 +43,10 @@ def _require_tool(name: str) -> str:
             "  Ubuntu: sudo apt install ffmpeg"
         )
     return path
+
+
 def _run(cmd: list[str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(cmd, check=True, capture_output=True, text=True)
-
-
-def _cli_require_tool(name: str) -> str:
-    try:
-        return _require_tool(name)
-    except VideoPreparationError as exc:
-        sys.exit(str(exc))
 
 
 def probe(path: Path) -> dict:

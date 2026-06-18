@@ -1,6 +1,6 @@
 """Pydantic schemas for structured safety analysis outputs."""
 
-from typing import List, Literal
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -43,7 +43,7 @@ class SafetyReport(BaseModel):
     overall_summary: str = Field(
         description="One-paragraph executive summary of the most important safety findings in the clip."
     )
-    events: List[SafetyEvent] = Field(
+    events: list[SafetyEvent] = Field(
         description="Ordered list of distinct safety events; use an empty list if none are observed."
     )
     requires_human_review: bool = Field(
