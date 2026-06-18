@@ -66,7 +66,7 @@ graph TD
     Q2 --> PDF[ReportLab fillable PDF]
     Q3 --> PDF
 
-    UI --> FB[👍 / 👎 feedback + optional comment]
+    UI --> FB[+/- feedback + optional comment]
 
     Stream -.FlowTrace span.-> LF[Langfuse · traces + scores]
     Q1 -.generation span.-> LF
