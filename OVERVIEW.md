@@ -41,6 +41,8 @@ Worker safety, regulatory exposure, and insurance outcomes all depend on getting
 
 ## Architecture
 
+## Architecture
+
 ```mermaid
 graph TD
     U[User uploads security clip]
