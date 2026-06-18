@@ -1,6 +1,6 @@
 ## Intro
 
-**Incident video review** is the backbone of workplace safety investigations — determining what happened, who or what was involved, whether policy was violated, and what should go on the official report. Doing it manually is slow, expensive, and inconsistent. Investigators may scrub hours of CCTV to find a few seconds of relevance, then transcribe observations into forms that insurers, OSHA, and internal safety teams all expect in a standard shape.
+**Incident video review** is the backbone of workplace safety investigations — determining what happened, who or what was involved, whether policy was violated, and what should go on the official report. Doing it manually is slow, expensive, and inconsistent. Investigators may scrub hours of CCTV to find a few seconds of relevance, then transcribe observations into forms that insurers, OSHA, and internal safety teams all expect in a standard shape. 
 
 This project demonstrates how a **vision-language model (VLM)** with native video understanding can compress that loop into a short, auditable workflow: upload a security clip and Perceptron's **Mk1** returns a timestamped safety analysis — events, severity, visual evidence, recommended actions — plus a **fillable Workplace Incident Report PDF** populated from the same findings.
 
@@ -13,7 +13,7 @@ The build composes several of Mk1's core multimodal primitives in one end-to-end
 
 ## Why I chose this problem
 
-Every serious workplace — warehouses, construction sites, offices — already has cameras. What they lack is a fast path from **footage → documented incident**. Today that path is almost entirely human:
+The global workplace safety and compliance market is valued at over $23 billion, with direct financial losses from workplace injuries costing U.S. businesses more than $58 billion. Yet these industries still rely on manual incident review: scrubbing footage, taking notes, and filling out forms for compliance and insurance. Every serious workplace — warehouses, construction sites, offices — already has cameras. What they lack is a fast path from **footage → documented incident**. Today that path is almost entirely human:
 
 1. A supervisor or safety officer gets alerted.
 2. Someone searches DVR/NVR footage for the relevant window.
@@ -35,7 +35,7 @@ The audience spans three tiers with the same underlying primitive:
 | **Compliance** | EHS, risk, and insurance investigators | Consistent, evidence-linked documentation for audits and claims |
 | **Platform** | VMS vendors, integrators, and enterprise AI teams | A model layer on top of existing camera infrastructure |
 
-Worker safety, regulatory exposure, and insurance outcomes all depend on getting incident documentation right. Automating the *review and draft* step while keeping humans in the loop for sign-off improves efficiency while maintaining accuracy.
+Worker safety, regulatory exposure, and insurance outcomes all depend on getting incident documentation right. Automating the *review and draft* step while keeping humans in the loop for sign-off improves efficiency while maintaining accuracy. Applying Mk1's reasoning capabilities to this domain will save billable hours from attorneys, medicolegal experts, and workplace safety analysts while also being seamlessly integrated into other workflows for workplace injury management  
 
 
 ## Architecture
