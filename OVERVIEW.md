@@ -86,7 +86,7 @@ Deploy artifacts: `requirements.txt`, `apt.txt` (ffmpeg on Hugging Face Spaces),
 
 ## Methodology
 
-**1. Define the output contract first.** 
+**1. Define the output contract first.** \\
 Before touching UI code, the `SafetyReport` Pydantic schema locked down what "done" looks like: `overall_summary`, a list of `SafetyEvent` objects (type, severity, MM:SS window, description, visual evidence, recommended action), and `requires_human_review` for triage. Field descriptions double as prompt guidance for Mk1 via `pydantic_format(..., strict=True)`.
 
 **2. Compression and conversion pipeline.** 
