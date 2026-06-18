@@ -86,9 +86,11 @@ Deploy artifacts: `requirements.txt`, `apt.txt` (ffmpeg on Hugging Face Spaces),
 
 ## Methodology
 
-**1. Define the output contract first.** Before touching UI code, the `SafetyReport` Pydantic schema locked down what "done" looks like: `overall_summary`, a list of `SafetyEvent` objects (type, severity, MM:SS window, description, visual evidence, recommended action), and `requires_human_review` for triage. Field descriptions double as prompt guidance for Mk1 via `pydantic_format(..., strict=True)`.
+**1. Define the output contract first.** 
+Before touching UI code, the `SafetyReport` Pydantic schema locked down what "done" looks like: `overall_summary`, a list of `SafetyEvent` objects (type, severity, MM:SS window, description, visual evidence, recommended action), and `requires_human_review` for triage. Field descriptions double as prompt guidance for Mk1 via `pydantic_format(..., strict=True)`.
 
-**2. Compression and conversion pipeline.** Raw security footage is often MOV from a phone, AVI from a DVR export, or hundreds of megabytes long. Mk1's request body cap is 20 MB; this app targets **15 MB** with headroom. `compress_video.py` wraps ffmpeg to:
+**2. Compression and conversion pipeline.** 
+Raw security footage is often MOV from a phone, AVI from a DVR export, or hundreds of megabytes long. Mk1's request body cap is 20 MB; this app targets **15 MB** with headroom. `compress_video.py` wraps ffmpeg to:
 
 - Convert non-MP4 / non-H.264 sources to MP4 (H.264/AAC)
 - Progressively raise CRF and downscale (720p → 480p) until under the cap
@@ -96,14 +98,16 @@ Deploy artifacts: `requirements.txt`, `apt.txt` (ffmpeg on Hugging Face Spaces),
 
 The Gradio app calls `prepare_video_for_upload` automatically on Analyze; the CLI script is for manual prep.
 
-**3. Structured incident review.** One focused prompt asks for every observable safety event, near-miss, or policy violation — with an explicit constraint to **cite only what is directly visible on camera**. Chain-of-thought reasoning is enabled so reviewers (and Langfuse traces) can audit *why* the model flagged each event.
+**3. Structured incident review.** 
+One focused prompt asks for every observable safety event, near-miss, or policy violation — with an explicit constraint to **cite only what is directly visible on camera**. Chain-of-thought reasoning is enabled so reviewers (and Langfuse traces) can audit *why* the model flagged each event.
 
 **4. PDF workflow as a second layer** 
 The app maps structured JSON to workplace form fields heuristically:
 - Runs **two narrow follow-up video questions** on the primary (highest-severity) event for fields that need additional verification: likely injuries and on-screen date/time
 - Renders a **fillable AcroForm PDF** programmatically with ReportLab so safety managers can edit before filing
 
-**6. LLMOps observability and evaluation loop.** Langfuse captures:
+**6. LLMOps observability and evaluation loop.** 
+Langfuse captures:
 
 - **Flow span** (`flow-a-incident-review`) — video metadata only (no raw bytes), structured output, event counts
 - **Generation spans** (`perceptron-mk1`) — per model call
