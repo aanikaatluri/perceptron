@@ -165,7 +165,8 @@ def incident_review(
     session_id: str | None = None,
 ) -> dict:
     """Flow A: structured safety incident report."""
-    path = Path(video_path)
+    source_path = Path(video_path)
+    path = source_path
 
     with trace_context(flow="A", session_id=session_id, tags=["incident-review", "structured-output"]):
         path, prep_error = _prepare_video(path)
@@ -224,6 +225,7 @@ def incident_review(
             pdf_path = fill_incident_report(
                 payload,
                 video_path=path,
+                source_video_path=source_path,
                 record_model_call=lambda prompt, kwargs, result: set_generation_io(
                     prompt=prompt,
                     kwargs=kwargs,
@@ -244,7 +246,8 @@ def incident_review_stream(
     session_id: str | None = None,
 ) -> Iterator[FlowUpdate]:
     """Flow A with live reasoning streamed to the UI."""
-    path = Path(video_path)
+    source_path = Path(video_path)
+    path = source_path
     trace = FlowTrace.start(
         "flow-a-incident-review",
         flow="A",
@@ -337,6 +340,7 @@ def incident_review_stream(
                 fill_incident_report(
                     payload,
                     video_path=path,
+                    source_video_path=source_path,
                     record_model_call=trace.record_generation,
                 )
             )

@@ -543,10 +543,34 @@ def _render_incident_report_pdf(values: dict[str, str | bool]) -> bytes:
     return buffer.getvalue()
 
 
+def _sanitize_video_stem(stem: str) -> str:
+    normalized = unicodedata.normalize("NFKD", stem)
+    ascii_stem = normalized.encode("ascii", "ignore").decode("ascii")
+    safe = re.sub(r"[^\w\-]+", "_", ascii_stem).strip("_")
+    return safe or "clip"
+
+
+def _incident_report_output_path(source_video_path: str | Path | None) -> Path:
+    stem = _sanitize_video_stem(
+        Path(source_video_path).stem if source_video_path else "clip"
+    )
+    filename = f"perceptron_{stem}_incident_report.pdf"
+    output_path = Path(tempfile.gettempdir()) / filename
+    if output_path.exists():
+        fd, tmp_name = tempfile.mkstemp(
+            suffix=f"_{stem}_incident_report.pdf",
+            prefix="perceptron_",
+        )
+        os.close(fd)
+        return Path(tmp_name)
+    return output_path
+
+
 def fill_incident_report(
     safety_report: dict,
     *,
     video_path: str | Path | None = None,
+    source_video_path: str | Path | None = None,
     template_path: Path | None = None,
     record_model_call: ModelCallRecorder = None,
 ) -> Path:
@@ -569,8 +593,6 @@ def fill_incident_report(
 
     pdf_bytes = _render_incident_report_pdf(values)
 
-    fd, tmp_name = tempfile.mkstemp(suffix="_incident_report.pdf", prefix="perceptron_")
-    os.close(fd)
-    output_path = Path(tmp_name)
+    output_path = _incident_report_output_path(source_video_path or video_path)
     output_path.write_bytes(pdf_bytes)
     return output_path

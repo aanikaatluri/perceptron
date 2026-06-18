@@ -175,6 +175,18 @@ with gr.Blocks(
         position: relative;
     }
 
+    .result-panel-label p {
+        margin: 0 0 0.35rem 0;
+        font-size: var(--text-sm, 14px);
+        font-weight: 600;
+        color: var(--block-label-text-color, var(--body-text-color));
+        line-height: 1.2;
+    }
+
+    .pdf-loading-panel {
+        min-height: 7.5rem;
+    }
+
     .panel-loading-overlay {
         position: absolute;
         inset: 0;
@@ -184,7 +196,7 @@ with gr.Blocks(
         justify-content: center;
         pointer-events: none;
         background: radial-gradient(circle at center, rgba(255, 255, 255, 0.92) 0%, rgba(255, 255, 255, 0.82) 38%, rgba(255, 255, 255, 0) 72%);
-        border-radius: 12px;
+        border-radius: var(--radius-lg, 12px);
     }
 
     .dark .panel-loading-overlay {
@@ -345,9 +357,11 @@ with gr.Blocks(
             review_reasoning = gr.Markdown(value="", elem_classes=["progress-markdown"])
             review_feedback_status = gr.Markdown()
         with gr.Column(visible=False) as results_column:
+            gr.Markdown("Structured safety report", elem_classes=["result-panel-label"])
             with gr.Group(elem_classes=["loading-panel"]):
                 review_output = gr.Code(
-                    label="Structured safety report",
+                    show_label=False,
+                    container=False,
                     language="json",
                     value="",
                     lines=18,
@@ -359,9 +373,11 @@ with gr.Blocks(
                     visible=False,
                     elem_classes=["panel-loading-overlay"],
                 )
-            with gr.Group(elem_classes=["loading-panel"]):
+            gr.Markdown("Download Workplace Incident Report", elem_classes=["result-panel-label"])
+            with gr.Group(elem_classes=["loading-panel", "pdf-loading-panel"]):
                 review_pdf = gr.File(
-                    label="Download Workplace Incident Report",
+                    show_label=False,
+                    container=False,
                     interactive=False,
                 )
                 review_pdf_loading = gr.HTML(
