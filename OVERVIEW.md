@@ -54,6 +54,7 @@ graph TD
     API --> Clips["Timestamped Evidence Clips"]
 
     Report --> PDF["Auto-filled Injury Report PDF"]
+    Clips --> PDF
 
     UI --> FB["User Feedback"]
 
