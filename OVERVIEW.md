@@ -116,7 +116,7 @@ Langfuse captures:
 
 This enables satisfaction dashboards, low-rated trace review, annotation queues, and future regression datasets when prompts or schemas change.
 
-## What the app produces
+## Output
 
 For each analyzed clip, a reviewer gets:
 
