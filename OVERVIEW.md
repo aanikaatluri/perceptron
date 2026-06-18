@@ -61,7 +61,7 @@ graph TD
     FB -. "ratings" .-> LF
 ```
 
-**One user-facing flow (Flow A — Safety Incident Review)**, up to **three Mk1 call sites** per successful run:
+**One user-facing flow (Safety Incident Review)**, up to **three Mk1 call sites** per successful run:
 
 1. **Primary review** — full-clip structured `SafetyReport` with reasoning.
 2. **Injury enrichment** — targeted pass on the highest-severity event's time window for additional insights.
