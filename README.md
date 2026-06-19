@@ -9,7 +9,7 @@ This application uses **Perceptron Mk1** to turn workplace safety footage into s
 
 The system follows a workplace reporting workflow: it automatically fills report fields using only visually verified information and links findings to supporting video evidence.
 
-
+https://github.com/user-attachments/assets/bd4ac4e0-85fc-4857-b93e-1b2e182fbecd
 
 
 ## What it does
